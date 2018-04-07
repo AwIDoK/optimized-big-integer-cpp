@@ -7,6 +7,9 @@
 class big_integer {
     std::vector<unsigned int> vec;
     bool sign;
+    friend std::string to_string(big_integer const& big_int);
+    void compress();
+    int compare(big_integer const& big_int);
 public:
 
     big_integer();
@@ -23,17 +26,17 @@ public:
     bool operator>=(big_integer const& second);
     bool operator>(big_integer const& second);
 
-    friend std::string to_string(big_integer const& bigInteger);
-
-
-    big_integer& operator+();
-    big_integer& operator-();
+    big_integer operator+();
+    big_integer operator-();
+    big_integer operator~();
 
     big_integer operator+(big_integer const& second);
     big_integer operator-(big_integer const& second);
     big_integer operator*(big_integer const& second);
     big_integer operator/(big_integer const& second);
     big_integer operator%(big_integer const& second);
+
+    std::pair<int, int> divide_with_mod(int second);
 
     big_integer& operator+=(big_integer const& second);
     big_integer& operator-=(big_integer const& second);
@@ -44,7 +47,6 @@ public:
     big_integer operator&(big_integer const& second);
     big_integer operator|(big_integer const& second);
     big_integer operator^(big_integer const& second);
-    big_integer operator~(big_integer const& second);
     big_integer operator>>(int second);
     big_integer operator<<(int second);
 
@@ -58,8 +60,6 @@ public:
     big_integer& operator--();
     big_integer operator++(int);
     big_integer operator--(int);
-
-
 };
 
 #endif
