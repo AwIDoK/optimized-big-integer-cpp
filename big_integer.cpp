@@ -3,20 +3,25 @@
 #include <algorithm>
 #include <vector>
 #include <stdexcept>
+#include <iostream>
+#include <cmath>
 
 big_integer::big_integer() {
-    vec.push_back(0);
+    number.push_back(0);
 }
 
 big_integer::big_integer(int value) {
-    vec.push_back(static_cast<uint32_t>(value));
-    vec.push_back(value >= 0 ? 0 : 0xFFFFFFFF);
-    compress();
+    number.push_back(static_cast<uint32_t>(value));
+    number.push_back(value >= 0 ? 0 : 0xFFFFFFFF);
+    normalize();
 }
 
 big_integer::big_integer(std::string const &value) : big_integer() {
     if (value.empty()) {
         return;
+    }
+    if (value[0] != '-' && !isdigit(value[0])) {
+        throw std::runtime_error("Unknown symbol");
     }
     size_t start_pos = 0;
     bool sign;
@@ -26,50 +31,47 @@ big_integer::big_integer(std::string const &value) : big_integer() {
     } else {
         sign = false;
     }
-    big_integer TEN(10);
     for (size_t i = start_pos; i < value.size(); i++) {
-        *this *= TEN;
+        if (!isdigit(value[i])) {
+            throw std::runtime_error("Unknown symbol");
+        }
+        multiply_by_short(10);
         *this += big_integer(value[i] - '0');
     }
-    vec.push_back(0);
-    compress();
+    number.push_back(0);
+    normalize();
     if (sign) {
-        *this = -(*this);
+        negate();
     }
-
 }
 
 big_integer::big_integer(big_integer const &big_int) = default;
 
 big_integer &big_integer::operator=(big_integer const &big_int) = default;
 
-big_integer big_integer::operator+() {
+big_integer big_integer::operator+() const {
     return *this;
 }
 
 big_integer big_integer::operator-() const {
-    auto result = ~(*this);
-    result++;
+    auto result = *this;
+    result.negate();
     return result;
 }
 
 big_integer big_integer::operator~() const {
-    big_integer result = (*this);
-    for (auto &digit : result.vec) {
-        digit = ~digit;
-    }
-    result.compress();
+    big_integer result = *this;
+    result.bitwise_not();
     return result;
 }
 
-
-big_integer big_integer::operator--(int) {
+big_integer const big_integer::operator--(int) {
     auto res = *this;
     *this -= 1;
     return res;
 }
 
-big_integer big_integer::operator++(int) {
+big_integer const big_integer::operator++(int) {
     auto res = *this;
     *this += 1;
     return res;
@@ -86,130 +88,140 @@ big_integer &big_integer::operator++() {
 }
 
 std::string to_string(big_integer const &big_int) {
-    big_integer copy(big_int);
+    big_integer copy;
     if (big_int.sign()) {
-        copy = -copy;
+        copy = -big_int;
+    } else {
+        copy = big_int;
     }
     std::string result;
     do {
-        auto tmp = copy.divide_with_mod(1000000000);
+        auto tmp = copy.divide_by_short_with_remainder(1000000000);
         for (int i = 0; i < 9; i++) {
-            result += char('0' + tmp.second % 10);
-            tmp.second /= 10;
+            result += char('0' + tmp % 10);
+            tmp /= 10;
         }
-        copy = tmp.first;
-    } while (copy.vec.size() != 1 || copy.get_digit(0) != 0);
+    } while (copy.number.size() != 1 || copy.number[0] != 0);
     while (result.size() > 1 && result.back() == '0') {
         result.pop_back();
     }
     if (big_int.sign()) {
-        result += "-";
+        result += '-';
     }
     std::reverse(result.begin(), result.end());
     return result;
 }
 
-std::pair<big_integer, uint32_t> big_integer::divide_with_mod(int second) {
+uint32_t big_integer::divide_by_short_with_remainder(uint32_t second) {
     uint64_t carry = 0;
-    big_integer result;
-    for (int64_t i = static_cast<int64_t>(vec.size()) - 1; i >= 0; i--) {
-        carry = (carry << 32u) + get_digit(static_cast<size_t>(i));
-        result.vec.push_back(static_cast<uint32_t>(carry / second));
+    for (size_t i = number.size(); i-- > 0;) {
+        carry = (carry << 32u) + number[i];
+        number[i] = (static_cast<uint32_t>(carry / second));
         carry %= second;
     }
-    std::reverse(result.vec.begin(), result.vec.end());
-    result.vec.push_back(0);
-    result.compress();
-    return std::make_pair(result, static_cast<uint32_t>(carry));
+    normalize();
+    return static_cast<int>(carry);
 }
 
 big_integer &big_integer::operator+=(big_integer const &second) {
     uint64_t carry = 0;
-    size_t len = std::max(vec.size(), second.vec.size()) + 1;
-    for (size_t i = 0; i < len; i++) {
+    size_t len = std::max(number.size(), second.number.size());
+    size_t min_len = std::min(number.size(), second.number.size());
+    for (size_t i = 0; i < len && (carry || i < min_len); i++) {
         carry += get_digit(i) + static_cast<uint64_t>(second.get_digit(i));
         set_digit(i, static_cast<uint32_t>(carry));
         carry >>= 32;
     }
-    vec.resize(len);
-    compress();
+    if (number.size() > len) {
+        number.pop_back();
+    }
+    normalize();
     return *this;
 }
 
 big_integer &big_integer::operator-=(big_integer const &second) {
-    (*this) += -second;
+    *this += -second;
+    return *this;
+}
+
+template<class fun>
+big_integer &big_integer::bitwiseOperation(fun func, big_integer const &second) {
+    size_t len = std::max(number.size(), second.number.size());
+    for (size_t i = 0; i < len; i++) {
+        set_digit(i, func(get_digit(i), second.get_digit(i)));
+    }
+    number.pop_back();
+    normalize();
     return *this;
 }
 
 big_integer &big_integer::operator&=(big_integer const &second) {
-    size_t len = std::max(vec.size(), second.vec.size());
-    for (size_t i = 0; i < len; i++) {
-        set_digit(i, get_digit(i) & second.get_digit(i));
-    }
-    vec.pop_back();
-    compress();
-    return *this;
+    return bitwiseOperation(std::bit_and<>(), second);
 }
 
 big_integer &big_integer::operator|=(big_integer const &second) {
-    size_t len = std::max(vec.size(), second.vec.size());
-    for (size_t i = 0; i < len; i++) {
-        set_digit(i, get_digit(i) | second.get_digit(i));
-    }
-    vec.pop_back();
-    compress();
-    return *this;
+    return bitwiseOperation(std::bit_or<>(), second);
 }
 
 big_integer &big_integer::operator^=(big_integer const &second) {
-    size_t len = std::max(vec.size(), second.vec.size());
-    for (size_t i = 0; i < len; i++) {
-        set_digit(i, get_digit(i) ^ second.get_digit(i));
-    }
-    vec.pop_back();
-    compress();
-    return *this;
+    return bitwiseOperation(std::bit_xor<>(), second);
 }
 
 big_integer &big_integer::operator>>=(int second) {
-    auto first = static_cast<size_t>(second / 32);
-    auto delta = static_cast<size_t>(second % 32);
-    for (size_t i = 0; i < vec.size(); i++) {
+    auto delta_full = static_cast<size_t>(second / 32);
+    auto delta_local = static_cast<size_t>(second % 32);
+    for (size_t i = 0; i < number.size(); i++) {
         uint32_t digit = 0;
-        digit |= (get_digit(i + first)) >> delta;
-        digit |= (get_digit(i + first + 1) << (32 - delta));
-        vec[i] = digit;
+        digit |= (get_digit(i + delta_full)) >> delta_local;
+        if (delta_local > 0) {
+            digit |= (get_digit(i + delta_full + 1) << (32 - delta_local));
+        }
+        number[i] = digit;
     }
-    compress();
+    normalize();
     return *this;
 }
 
 big_integer &big_integer::operator<<=(int second) {
-    int first = (second / 32);
-    int delta = (second % 32);
-    for (size_t i = vec.size(); i-- > first;) {
+    auto delta_full = static_cast<size_t>(second / 32);
+    auto delta_local = static_cast<size_t>(second % 32);
+    for (size_t i = number.size() + delta_full; i-- > delta_full;) {
         uint32_t digit = 0;
-        digit |= (get_digit(i - first)) << delta;
-        if (i > first) {
-            digit |= (get_digit(i - first - 1) >> (32 - delta));
+        digit |= get_digit(i - delta_full) << delta_local;
+        if (i > delta_full && delta_local > 0) {
+            digit |= (get_digit(i - delta_full - 1) >> (32 - delta_local));
         }
-        vec[i] = digit;
+        set_digit(i, digit);
     }
-    for (size_t i = 0; i < first; i++) {
-        vec[i] = 0;
+    for (size_t i = 0; i < delta_full; i++) {
+        number[i] = 0;
     }
-    compress();
+    normalize();
     return *this;
 }
 
+
+void big_integer::multiply_by_big(big_integer const &second) {
+    std::vector<uint32_t> result(number.size() + second.number.size());
+    uint64_t carry = 0;
+    for (size_t i = 0; i < number.size(); i++) {
+        carry = 0;
+        for (size_t j = 0; j < second.number.size(); j++) {
+            carry += result[i + j] + number[i] * static_cast<uint64_t>(second.number[j]);
+            result[i + j] = static_cast<uint32_t>(carry);
+            carry >>= 32;
+        }
+        result[i + second.number.size()] = static_cast<uint32_t>(carry);
+    }
+    number.swap(result);
+    normalize();
+}
 
 big_integer &big_integer::operator*=(big_integer const &second) {
     bool result_sign = sign() != second.sign();
     big_integer a;
     if (sign()) {
-        a = -(*this);
-    } else {
-        a = *this;
+        negate();
     }
     big_integer b;
     if (second.sign()) {
@@ -217,46 +229,80 @@ big_integer &big_integer::operator*=(big_integer const &second) {
     } else {
         b = second;
     }
-    std::vector<uint32_t> result(vec.size() + second.vec.size());
-    uint64_t carry = 0;
-    for (size_t i = 0; i < vec.size(); i++) {
-        for (size_t j = 0; j < second.vec.size(); j++) {
-            carry += result[i + j] + a.get_digit(i) * static_cast<uint64_t>(b.get_digit(j));
-            result[i + j] = static_cast<uint32_t>(carry);
-            carry >>= 32;
-        }
+    if (b.number.size() == 2) {
+        multiply_by_short(b.number[0]);
+    } else {
+        multiply_by_big(b);
     }
-    vec = result;
-    compress();
     if (result_sign) {
-        *this = -(*this);
+        negate();
     }
     return *this;
 }
 
-big_integer &big_integer::operator/=(big_integer const &second) {
-    bool res_sign = sign() ^second.sign();
-    big_integer left = 0, right;
-    if (sign()) {
-        right = -(*this);
-    } else {
-        right = *this;
+void big_integer::divide_by_big(big_integer &dividend) {
+    if (compare(dividend) == -1) {
+        *this = 0;
+        return;
     }
-    auto need = right;
-    while (left < right) {
-        big_integer mid = (left + right + 1) >> 1;
-        auto prod = mid * second;
-        if (prod > need) {
-            right = mid - 1;
-        } else {
-            left = mid;
+    auto norm = static_cast<uint32_t>((1ull << 32u) / (dividend.number[dividend.number.size() - 2] + 1));
+    multiply_by_short(norm);
+    dividend.multiply_by_short(norm);
+    size_t N = dividend.number.size() - 1;
+    size_t M = number.size() - N;
+    std::vector<uint32_t> result(M + 1);
+    for (size_t i = M + 1; i-- > 0;) {
+        uint64_t q = ((static_cast<uint64_t>(get_digit(i + N)) << 32u) + get_digit(i + N - 1)) / dividend.number[N - 1];
+        uint64_t r = ((static_cast<uint64_t>(get_digit(i + N)) << 32u) + get_digit(i + N - 1)) % dividend.number[N - 1];
+        q = std::min(q, static_cast<uint64_t>(0xFFFFFFFF));
+        while (q == (1ull << 32u) || (q * dividend.number[N - 2] > (r << 32u) + get_digit(i + N - 2))) {
+            q--;
+            r += dividend.number[N - 1];
+            if (r >= (1ull << 32u)) {
+                break;
+            }
         }
+        auto delta = dividend << (32 * i);
+        big_integer d(delta);
+        d.multiply_by_short(static_cast<uint32_t> (q));
+        *this -= d;
+        while (sign()) {
+            *this += delta;
+            q--;
+        }
+        result[i] = static_cast<uint32_t>(q);
+    }
+    result.push_back(0);
+    number.swap(result);
+    normalize();
+}
+
+big_integer &big_integer::operator/=(big_integer const &second) {
+    if (second.number.size() == 1 && second.number[0] == 0) {
+        throw std::runtime_error("Division by zero");
+    }
+    if (number.size() == 1 && number[0] == 0) {
+        return *this = 0;
+    }
+    bool res_sign = sign() ^ second.sign();
+    if (sign()) {
+        negate();
+    }
+    big_integer dividend;
+    if (second.sign()) {
+        dividend = -second;
+    } else {
+        dividend = second;
+    }
+    if (dividend.number.size() == 2) {
+        uint32_t value = dividend.number[0];
+        divide_by_short_with_remainder(value);
+    } else {
+        divide_by_big(dividend);
     }
     if (res_sign) {
-        left = -left;
+        negate();
     }
-    this->vec = left.vec;
-    compress();
     return *this;
 }
 
@@ -265,12 +311,12 @@ big_integer &big_integer::operator%=(big_integer const &second) {
     return *this;
 }
 
-void big_integer::compress() {
-    auto last = vec.back();
-    while (!vec.empty() && vec.back() == last) {
-        vec.pop_back();
+void big_integer::normalize() {
+    auto last_digit = number.back();
+    while (!number.empty() && number.back() == last_digit) {
+        number.pop_back();
     }
-    vec.push_back(last);
+    number.push_back(last_digit);
 }
 
 big_integer operator&(big_integer first, const big_integer &second) {
@@ -310,22 +356,22 @@ bool operator!=(big_integer const &first, big_integer const &second) {
 }
 
 int big_integer::compare(big_integer const &second) const {
-    int ret = sign() ? -1 : 1;
+    int return_value = sign() ? -1 : 1;
     if (sign() != second.sign()) {
-        return ret;
+        return return_value;
     }
-    if (vec.size() > second.vec.size()) {
-        return ret;
+    if (number.size() > second.number.size()) {
+        return return_value;
     }
-    if (vec.size() < second.vec.size()) {
-        return -ret;
+    if (number.size() < second.number.size()) {
+        return -return_value;
     }
-    for (size_t i = vec.size(); i-- > 0;) {
-        if (vec[i] > second.vec[i]) {
-            return ret;
+    for (size_t i = number.size(); i-- > 0;) {
+        if (number[i] > second.number[i]) {
+            return return_value;
         }
-        if (vec[i] < second.vec[i]) {
-            return -ret;
+        if (number[i] < second.number[i]) {
+            return -return_value;
         }
     }
     return 0;
@@ -353,36 +399,67 @@ big_integer operator%(big_integer first, const big_integer &second) {
 }
 
 bool big_integer::sign() const {
-    return static_cast<bool>((vec.back() >> 31) & 1);
+    return static_cast<bool>((number.back() >> 31u) & 1u);
 }
 
 uint32_t big_integer::get_digit(size_t pos) const {
-    if (pos < vec.size()) {
-        return vec[pos];
+    if (pos < number.size()) {
+        return number[pos];
     }
     return sign() ? 0xFFFFFFFF : 0;
 }
 
 void big_integer::set_digit(size_t pos, uint32_t value) {
-    if (pos + 1 >= vec.size()) {
-        vec.resize(pos + 2, sign() ? 0xFFFFFFFF : 0);
+    if (pos + 1 >= number.size()) {
+        number.resize(pos + 2, sign() ? 0xFFFFFFFF : 0);
     }
-    vec[pos] = value;
+    number[pos] = value;
 }
 
-
-big_integer big_integer::operator>>(int second) {
+big_integer big_integer::operator>>(int second) const {
     auto result = *this;
     result >>= second;
     return result;
 }
 
-big_integer big_integer::operator<<(int second) {
+big_integer big_integer::operator<<(int second) const {
     auto result = *this;
     result <<= second;
     return result;
 }
 
+big_integer::big_integer(uint64_t value) {
+    number.push_back(static_cast<uint32_t> (value));
+    number.push_back(static_cast<uint32_t> (value >> 32u));
+    number.push_back(0);
+    normalize();
+}
 
+big_integer::big_integer(uint32_t value) {
+    number.push_back(value);
+    number.push_back(0);
+    normalize();
+}
 
+void big_integer::negate() {
+    bitwise_not();
+    *this += 1;
+}
+
+void big_integer::bitwise_not() {
+    for (auto &digit : number) {
+        digit = ~digit;
+    }
+}
+
+void big_integer::multiply_by_short(uint32_t second) {
+    uint64_t carry = 0;
+    for (auto &digit : number) {
+        carry += digit * static_cast<uint64_t>(second);
+        digit = static_cast<uint32_t>(carry);
+        carry >>= 32;
+    }
+    number.push_back(0);
+    normalize();
+}
 
