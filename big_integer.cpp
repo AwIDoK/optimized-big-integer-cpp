@@ -428,19 +428,6 @@ big_integer big_integer::operator<<(int second) const {
     return result;
 }
 
-big_integer::big_integer(uint64_t value) {
-    number.push_back(static_cast<uint32_t> (value));
-    number.push_back(static_cast<uint32_t> (value >> 32u));
-    number.push_back(0);
-    normalize();
-}
-
-big_integer::big_integer(uint32_t value) {
-    number.push_back(value);
-    number.push_back(0);
-    normalize();
-}
-
 void big_integer::negate() {
     bitwise_not();
     *this += 1;

@@ -39,10 +39,6 @@ public:
 
     big_integer(int value);
 
-    big_integer(uint64_t value);
-
-    big_integer(uint32_t value);
-
     big_integer(std::string const &value);
 
     big_integer(big_integer const &big_int);
@@ -114,8 +110,6 @@ public:
     big_integer const operator++(int);
 
     big_integer const operator--(int);
-
-    big_integer &divide_by_big(const big_integer &dividend);
 };
 
 #endif
