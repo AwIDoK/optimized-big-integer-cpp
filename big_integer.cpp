@@ -3,12 +3,8 @@
 #include <algorithm>
 #include <vector>
 #include <stdexcept>
-#include <iostream>
-#include <cmath>
 
-big_integer::big_integer() {
-    number.push_back(0);
-}
+big_integer::big_integer() : big_integer(0) {}
 
 big_integer::big_integer(int value) {
     number.push_back(static_cast<uint32_t>(value));
@@ -60,7 +56,7 @@ big_integer big_integer::operator-() const {
 }
 
 big_integer big_integer::operator~() const {
-    big_integer result = *this;
+    auto result = *this;
     result.bitwise_not();
     return result;
 }
@@ -284,7 +280,7 @@ big_integer &big_integer::operator/=(big_integer const &second) {
     if (number.size() == 1 && number[0] == 0) {
         return *this = 0;
     }
-    bool res_sign = sign() ^ second.sign();
+    bool res_sign = sign() ^second.sign();
     if (sign()) {
         negate();
     }

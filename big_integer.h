@@ -24,7 +24,7 @@ class big_integer {
 
     uint32_t divide_by_short_with_remainder(uint32_t second);
 
-    void divide_by_big(big_integer & dividend);
+    void divide_by_big(big_integer &dividend);
 
     void multiply_by_short(uint32_t second);
 
