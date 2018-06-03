@@ -36,7 +36,7 @@ class big_integer {
 
     void vector_resize(size_t size);
 
-    void add(big_integer const& second, size_t start_pos = 0);
+    void add_or_sub(big_integer const& second, size_t start_pos = 0, bool is_sub = false);
 
 public:
     big_integer();

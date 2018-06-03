@@ -1,5 +1,4 @@
 #include "big_integer.h"
-#include <string>
 #include <algorithm>
 #include <vector>
 #include <stdexcept>
@@ -7,9 +6,10 @@
 big_integer::big_integer() : big_integer(0) {}
 
 big_integer::big_integer(int value) {
-    number.push_back(static_cast<uint32_t>(value));
-    number.push_back(value >= 0 ? 0 : 0xFFFFFFFF);
-    normalize();
+    number = {static_cast<uint32_t>(value), value >= 0 ? 0 : 0xFFFFFFFF};
+    if (value == 0 || value == -1) {
+        number.pop_back();
+    }
 }
 
 big_integer::big_integer(std::string const &value) : big_integer() {
@@ -36,7 +36,7 @@ big_integer::big_integer(std::string const &value) : big_integer() {
                 throw std::runtime_error("Unknown symbol");
             }
             multiply_by_short(delta == 1 ? 10u : 1000000000u);
-            add(std::stoi(value.substr(i, delta)));
+            add_or_sub(std::stoi(value.substr(i, delta)));
         }
     }
     number.push_back(0);
@@ -115,22 +115,22 @@ std::string to_string(big_integer const &big_int) {
 
 uint32_t big_integer::divide_by_short_with_remainder(uint32_t second) {
     uint64_t carry = 0;
-    for (size_t i = number.size(); i-- > 0;) {
-        carry = (carry << 32u) + number[i];
-        number[i] = (static_cast<uint32_t>(carry / second));
+    for (auto it = number.rbegin(); it != number.rend(); it++) {
+        carry = (carry << 32u) | *it;
+        *it = static_cast<uint32_t>(carry / second);
         carry %= second;
     }
     normalize();
-    return static_cast<int>(carry);
+    return static_cast<uint32_t>(carry);
 }
 
 big_integer &big_integer::operator+=(big_integer const &second) {
-    add(second, 0);
+    add_or_sub(second, 0);
     return *this;
 }
 
 big_integer &big_integer::operator-=(big_integer const &second) {
-    *this += -second;
+    add_or_sub(second, 0, true);
     return *this;
 }
 
@@ -239,7 +239,9 @@ void big_integer::divide_by_big(big_integer &dividend) {
     dividend.multiply_by_short(norm);
     size_t N = dividend.number.size() - 1;
     size_t M = number.size() - N;
-    std::vector<uint32_t> result(M + 1);
+    std::vector<uint32_t> result;
+    result.reserve(M + 2);
+    result.resize(M + 1);
     for (size_t i = M + 1; i-- > 0;) {
         uint64_t q = ((static_cast<uint64_t>(get_digit(i + N)) << 32u) + get_digit(i + N - 1)) / dividend.number[N - 1];
         uint64_t r = ((static_cast<uint64_t>(get_digit(i + N)) << 32u) + get_digit(i + N - 1)) % dividend.number[N - 1];
@@ -253,10 +255,9 @@ void big_integer::divide_by_big(big_integer &dividend) {
         }
         big_integer d(dividend);
         d.multiply_by_short(static_cast<uint32_t> (q));
-        d.negate();
-        add(d, i);
+        add_or_sub(d, i, true);
         while (sign()) {
-            add(dividend, i);
+            add_or_sub(dividend, i);
             q--;
         }
         result[i] = static_cast<uint32_t>(q);
@@ -391,10 +392,7 @@ bool big_integer::sign() const {
 }
 
 uint32_t big_integer::get_digit(size_t pos) const {
-    if (pos < number.size()) {
-        return number[pos];
-    }
-    return sign() ? 0xFFFFFFFF : 0;
+    return pos < number.size() ? number[pos] : sign() ? 0xFFFFFFFF : 0;
 }
 
 void big_integer::set_digit(size_t pos, uint32_t value) {
@@ -442,13 +440,13 @@ void big_integer::vector_resize(size_t size) {
     number.resize(size, sign() ? 0xFFFFFFFF : 0);
 }
 
-void big_integer::add(big_integer const &second, size_t delta_second) {
-    uint64_t carry = 0;
+void big_integer::add_or_sub(big_integer const &second, const size_t delta_second, const bool is_sub) {
+    auto carry = static_cast<uint64_t>(is_sub);
     size_t len = std::max(number.size(), second.number.size() + delta_second);
     size_t min_len = std::min(number.size(), second.number.size() + delta_second);
     vector_resize(len);
     for (size_t i = delta_second; (carry || i < min_len) && i < len; i++) {
-        carry += get_digit(i) + static_cast<uint64_t>(second.get_digit(i - delta_second));
+        carry += get_digit(i) + static_cast<uint64_t>(is_sub ? ~second.get_digit(i - delta_second) : second.get_digit(i - delta_second));
         number[i] = static_cast<uint32_t>(carry);
         carry >>= 32u;
     }
