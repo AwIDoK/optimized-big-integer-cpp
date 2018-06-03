@@ -27,12 +27,17 @@ big_integer::big_integer(std::string const &value) : big_integer() {
     } else {
         sign = false;
     }
-    for (size_t i = start_pos; i < value.size(); i++) {
-        if (!isdigit(value[i])) {
-            throw std::runtime_error("Unknown symbol");
+    size_t i = start_pos;
+    uint32_t delta;
+    while (i < value.size()) {
+        delta = i + 9 <= value.size() ? 9 : 1;
+        for (; i + delta <= value.size(); i += delta) {
+            if (!isdigit(value[i])) {
+                throw std::runtime_error("Unknown symbol");
+            }
+            multiply_by_short(delta == 1 ? 10u : 1000000000u);
+            add(std::stoi(value.substr(i, delta)));
         }
-        multiply_by_short(10);
-        *this += big_integer(value[i] - '0');
     }
     number.push_back(0);
     normalize();
@@ -179,9 +184,7 @@ big_integer &big_integer::operator<<=(int second) {
         }
         number[i] = digit;
     }
-    for (size_t i = 0; i < delta_full; i++) {
-        number[i] = 0;
-    }
+    std::fill(number.begin(), number.begin() + delta_full, 0);
     normalize();
     return *this;
 }
@@ -444,7 +447,7 @@ void big_integer::add(big_integer const &second, size_t delta_second) {
     size_t len = std::max(number.size(), second.number.size() + delta_second);
     size_t min_len = std::min(number.size(), second.number.size() + delta_second);
     vector_resize(len);
-    for (size_t i = delta_second; i < len && (carry || i < min_len); i++) {
+    for (size_t i = delta_second; (carry || i < min_len) && i < len; i++) {
         carry += get_digit(i) + static_cast<uint64_t>(second.get_digit(i - delta_second));
         number[i] = static_cast<uint32_t>(carry);
         carry >>= 32u;
