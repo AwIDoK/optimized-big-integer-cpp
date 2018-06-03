@@ -1,6 +1,5 @@
 #include "big_integer.h"
 #include <algorithm>
-#include <vector>
 #include <stdexcept>
 
 big_integer::big_integer() : big_integer(0) {}
