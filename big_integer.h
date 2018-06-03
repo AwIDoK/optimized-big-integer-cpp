@@ -34,6 +34,10 @@ class big_integer {
 
     void negate();
 
+    void vector_resize(size_t size);
+
+    void add(big_integer const& second, size_t start_pos = 0);
+
 public:
     big_integer();
 

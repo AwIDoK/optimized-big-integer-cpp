@@ -120,18 +120,7 @@ uint32_t big_integer::divide_by_short_with_remainder(uint32_t second) {
 }
 
 big_integer &big_integer::operator+=(big_integer const &second) {
-    uint64_t carry = 0;
-    size_t len = std::max(number.size(), second.number.size());
-    size_t min_len = std::min(number.size(), second.number.size());
-    for (size_t i = 0; i < len && (carry || i < min_len); i++) {
-        carry += get_digit(i) + static_cast<uint64_t>(second.get_digit(i));
-        set_digit(i, static_cast<uint32_t>(carry));
-        carry >>= 32;
-    }
-    if (number.size() > len) {
-        number.pop_back();
-    }
-    normalize();
+    add(second, 0);
     return *this;
 }
 
@@ -143,7 +132,7 @@ big_integer &big_integer::operator-=(big_integer const &second) {
 template<class fun>
 big_integer &big_integer::bitwiseOperation(fun func, big_integer const &second) {
     size_t len = std::max(number.size(), second.number.size());
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = len; i-- > 0;) {
         set_digit(i, func(get_digit(i), second.get_digit(i)));
     }
     number.pop_back();
@@ -181,13 +170,14 @@ big_integer &big_integer::operator>>=(int second) {
 big_integer &big_integer::operator<<=(int second) {
     auto delta_full = static_cast<size_t>(second / 32);
     auto delta_local = static_cast<size_t>(second % 32);
-    for (size_t i = number.size() + delta_full; i-- > delta_full;) {
+    vector_resize(number.size() + delta_full);
+    for (size_t i = number.size(); i-- > delta_full;) {
         uint32_t digit = 0;
-        digit |= get_digit(i - delta_full) << delta_local;
+        digit |= number[i - delta_full] << delta_local;
         if (i > delta_full && delta_local > 0) {
-            digit |= (get_digit(i - delta_full - 1) >> (32 - delta_local));
+            digit |= (number[i - delta_full - 1] >> (32 - delta_local));
         }
-        set_digit(i, digit);
+        number[i] = digit;
     }
     for (size_t i = 0; i < delta_full; i++) {
         number[i] = 0;
@@ -258,12 +248,12 @@ void big_integer::divide_by_big(big_integer &dividend) {
                 break;
             }
         }
-        auto delta = dividend << (32 * i);
-        big_integer d(delta);
+        big_integer d(dividend);
         d.multiply_by_short(static_cast<uint32_t> (q));
-        *this -= d;
+        d.negate();
+        add(d, i);
         while (sign()) {
-            *this += delta;
+            add(dividend, i);
             q--;
         }
         result[i] = static_cast<uint32_t>(q);
@@ -280,7 +270,7 @@ big_integer &big_integer::operator/=(big_integer const &second) {
     if (number.size() == 1 && number[0] == 0) {
         return *this = 0;
     }
-    bool res_sign = sign() ^second.sign();
+    bool res_sign = sign() ^ second.sign();
     if (sign()) {
         negate();
     }
@@ -303,8 +293,7 @@ big_integer &big_integer::operator/=(big_integer const &second) {
 }
 
 big_integer &big_integer::operator%=(big_integer const &second) {
-    *this -= (*this) / second * second;
-    return *this;
+    return *this -= *this / second * second;
 }
 
 void big_integer::normalize() {
@@ -395,7 +384,7 @@ big_integer operator%(big_integer first, const big_integer &second) {
 }
 
 bool big_integer::sign() const {
-    return static_cast<bool>((number.back() >> 31u) & 1u);
+    return number.back() == 0xFFFFFFFF;
 }
 
 uint32_t big_integer::get_digit(size_t pos) const {
@@ -440,9 +429,27 @@ void big_integer::multiply_by_short(uint32_t second) {
     for (auto &digit : number) {
         carry += digit * static_cast<uint64_t>(second);
         digit = static_cast<uint32_t>(carry);
-        carry >>= 32;
+        carry >>= 32u;
     }
     number.push_back(0);
     normalize();
 }
+
+void big_integer::vector_resize(size_t size) {
+    number.resize(size, sign() ? 0xFFFFFFFF : 0);
+}
+
+void big_integer::add(big_integer const &second, size_t delta_second) {
+    uint64_t carry = 0;
+    size_t len = std::max(number.size(), second.number.size() + delta_second);
+    size_t min_len = std::min(number.size(), second.number.size() + delta_second);
+    vector_resize(len);
+    for (size_t i = delta_second; i < len && (carry || i < min_len); i++) {
+        carry += get_digit(i) + static_cast<uint64_t>(second.get_digit(i - delta_second));
+        number[i] = static_cast<uint32_t>(carry);
+        carry >>= 32u;
+    }
+    normalize();
+}
+
 
